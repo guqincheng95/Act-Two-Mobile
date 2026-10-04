@@ -764,3 +764,158 @@ label {
   font-weight: 750;
   vertical-align: middle;
 }
+
+
+.character-mode-panel {
+  padding: 14px;
+  margin-top: 0;
+  margin-bottom: 14px;
+}
+
+.character-mode-title,
+.input-guide-title,
+.request-debug-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.character-mode-title strong,
+.input-guide-title strong,
+.request-debug-title strong {
+  font-size: 14px;
+}
+
+.character-mode-title small {
+  display: block;
+  margin-top: 3px;
+  color: #717986;
+  font-size: 10px;
+}
+
+.character-mode-title > span,
+.input-guide-title > span,
+.request-debug-title > span {
+  color: #7884ef;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.character-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.character-mode-tabs button {
+  min-height: 58px;
+  padding: 10px 11px;
+  border: 1px solid #29303b;
+  border-radius: 13px;
+  background: #0e1117;
+  color: #b6bdc8;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.character-mode-tabs button small {
+  display: block;
+  margin-top: 4px;
+  color: #6e7684;
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.character-mode-tabs button.active {
+  border-color: #5968f6;
+  background: rgba(89, 104, 246, .11);
+  color: #fff;
+}
+
+.switch.disabled {
+  opacity: .36;
+}
+
+.asset-meta-badge {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 44px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(7, 9, 14, .72);
+  backdrop-filter: blur(10px);
+  color: #aeb5c1;
+  font-size: 9px;
+  pointer-events: none;
+}
+
+.asset-replace-button {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 10px;
+  background: rgba(7, 9, 14, .75);
+  color: #d8dce4;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.asset-replace-button input {
+  display: none;
+}
+
+.input-guide {
+  padding: 14px;
+}
+
+.guide-grid {
+  display: grid;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.guide-grid div {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #0d1117;
+  color: #8f98a5;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.request-debug-panel {
+  padding: 14px;
+}
+
+.debug-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.debug-grid > div {
+  padding: 10px;
+  border-radius: 11px;
+  background: #0d1117;
+}
+
+.debug-grid small {
+  display: block;
+  color: #68717e;
+  font-size: 9px;
+}
+
+.debug-grid strong {
+  display: block;
+  margin-top: 3px;
+  color: #d8dce3;
+  font-size: 11px;
+}
