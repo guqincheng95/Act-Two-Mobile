@@ -461,3 +461,19 @@ label {
     gap: 9px;
   }
 }
+
+.hero-top { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }
+.settings-button { border:1px solid #2b3240; border-radius:12px; background:#151923; color:#b9c0cc; padding:8px 11px; font-size:12px; font-weight:700; }
+.backend-chip { display:inline-flex; align-items:center; gap:7px; margin-top:12px; padding:7px 10px; border:1px solid #222936; border-radius:999px; background:#10131a; color:#7e8795; font-size:11px; }
+.backend-chip span { width:7px; height:7px; border-radius:50%; background:#666e7b; }
+.backend-chip span.online { background:#73d59b; box-shadow:0 0 0 4px rgba(115,213,155,.08); }
+.backend-panel { padding:16px; margin-top:0; margin-bottom:14px; }
+.panel-title { display:flex; justify-content:space-between; gap:16px; }
+.panel-title strong { display:block; font-size:15px; }
+.panel-title small { display:block; margin-top:4px; color:#737b88; font-size:11px; }
+.close-button { width:30px; height:30px; border:0; border-radius:10px; background:#1b202a; color:#9da5b1; font-size:20px; }
+.backend-actions { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-top:12px; }
+.secondary-button,.primary-small { height:44px; border-radius:13px; font-weight:750; }
+.secondary-button { border:1px solid #2a303c; background:#11151c; color:#c7ccd5; }
+.primary-small { border:0; background:#5868ef; color:#fff; }
+.backend-hint { margin:10px 2px 0; color:#5f6774; font-size:10px; line-height:1.55; }
