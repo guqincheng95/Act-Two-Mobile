@@ -28,6 +28,9 @@ const taskDetail = ref('')
 const resultUrl = ref('')
 const resultSectionEl = ref(null)
 const submitting = ref(false)
+const uploadPercent = ref(0)
+const uploadLoadedBytes = ref(0)
+const uploadTotalBytes = ref(0)
 let pollTimer = null
 const TASK_STORAGE_KEY = 'actTwoActiveTask'
 
@@ -37,7 +40,8 @@ const apiBase = computed(() => backendUrl.value.replace(/\/+$/, ''))
 const statusLabel = computed(() => {
   const map = {
     IDLE: '等待素材',
-    UPLOADING: '上传素材',
+    UPLOADING: '上传到云端',
+    FORWARDING: '云端转存',
     SUBMITTED: '已提交',
     PENDING: '排队中',
     THROTTLED: '排队中',
@@ -224,6 +228,9 @@ function resetResult() {
   taskStatus.value = 'IDLE'
   taskDetail.value = ''
   resultUrl.value = ''
+  uploadPercent.value = 0
+  uploadLoadedBytes.value = 0
+  uploadTotalBytes.value = 0
   if (pollTimer) {
     clearTimeout(pollTimer)
     pollTimer = null
@@ -254,12 +261,47 @@ async function generate() {
   if (seed.value.trim()) form.append('seed', seed.value.trim())
 
   try {
-    const response = await fetch(`${apiBase.value}/api/tasks`, {
-      method: 'POST',
-      body: form,
+    const payload = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `${apiBase.value}/api/tasks`)
+      xhr.responseType = 'json'
+      xhr.timeout = 15 * 60 * 1000
+
+      xhr.upload.onloadstart = () => {
+        uploadPercent.value = 0
+        taskStatus.value = 'UPLOADING'
+        taskDetail.value = '正在上传到阿里云…'
+      }
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return
+        uploadLoadedBytes.value = event.loaded
+        uploadTotalBytes.value = event.total
+        uploadPercent.value = Math.min(100, Math.round((event.loaded / event.total) * 100))
+        taskStatus.value = 'UPLOADING'
+        taskDetail.value = `手机 → 阿里云：${uploadPercent.value}% · ${formatBytes(event.loaded)} / ${formatBytes(event.total)}`
+      }
+
+      xhr.upload.onload = () => {
+        uploadPercent.value = 100
+        taskStatus.value = 'FORWARDING'
+        taskDetail.value = '手机上传完成，阿里云正在转存素材到 Runway…'
+      }
+
+      xhr.onload = () => {
+        const response = xhr.response || {}
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(response)
+        } else {
+          reject(new Error(response.detail || `提交失败（HTTP ${xhr.status}）`))
+        }
+      }
+
+      xhr.onerror = () => reject(new Error('网络连接失败，请检查本地网络或云服务器'))
+      xhr.ontimeout = () => reject(new Error('上传超时，请检查视频大小和网络状态'))
+      xhr.onabort = () => reject(new Error('上传已取消'))
+      xhr.send(form)
     })
-    const payload = await response.json()
-    if (!response.ok) throw new Error(payload.detail || '提交失败')
 
     taskId.value = payload.id
     taskStatus.value = 'SUBMITTED'
@@ -520,7 +562,17 @@ onBeforeUnmount(() => {
         <p>{{ taskDetail }}</p>
         <div v-if="taskId && !terminalStatuses.has(taskStatus)" class="background-tip">现在可以切到后台，Runway 会继续生成；返回 App 会自动同步任务状态。</div>
         <code v-if="taskId">{{ taskId }}</code>
-        <div v-if="!terminalStatuses.has(taskStatus)" class="progress-track"><span></span></div>
+        <div v-if="taskStatus === 'UPLOADING'" class="upload-progress-wrap">
+          <div class="upload-progress-text">
+            <span>手机 → 阿里云</span>
+            <strong>{{ uploadPercent }}%</strong>
+          </div>
+          <div class="upload-progress-track">
+            <span :style="{ width: uploadPercent + '%' }"></span>
+          </div>
+          <small>{{ formatBytes(uploadLoadedBytes) }} / {{ formatBytes(uploadTotalBytes) }}</small>
+        </div>
+        <div v-else-if="!terminalStatuses.has(taskStatus)" class="progress-track"><span></span></div>
       </div>
 
       <div v-else class="result-card">
