@@ -1,0 +1,72 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/android-apk.yml"
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm install
+
+      - name: Build Vue frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Create Android project
+        working-directory: frontend
+        run: npx cap add android
+
+      - name: Allow LAN HTTP backend for testing
+        working-directory: frontend
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          text = p.read_text(encoding="utf-8")
+          if 'android:usesCleartextTraffic=' not in text:
+              text = text.replace("<application", '<application android:usesCleartextTraffic="true"', 1)
+          p.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Sync Capacitor
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug
+
+      - name: Rename APK
+        run: |
+          mkdir -p output
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk output/Act-Two-Mobile-v0.2.0-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Act-Two-Mobile-v0.2.0-debug
+          path: output/Act-Two-Mobile-v0.2.0-debug.apk
+          if-no-files-found: error
