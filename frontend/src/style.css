@@ -477,3 +477,123 @@ label {
 .secondary-button { border:1px solid #2a303c; background:#11151c; color:#c7ccd5; }
 .primary-small { border:0; background:#5868ef; color:#fff; }
 .backend-hint { margin:10px 2px 0; color:#5f6774; font-size:10px; line-height:1.55; }
+
+
+.video-upload-card {
+  cursor: default;
+}
+
+.video-pick-area {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+}
+
+.reference-player {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #06080d;
+}
+
+.video-upload-card video::-webkit-media-controls-panel {
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
+}
+
+.video-overlay-top {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background: rgba(7, 9, 14, 0.72);
+  backdrop-filter: blur(10px);
+  color: #d8dbe3;
+  font-size: 10px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.video-ready-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #7a8290;
+}
+
+.video-ready-dot.ready {
+  background: #73d59b;
+}
+
+.video-ready-dot.preview-error {
+  background: #f2b35f;
+}
+
+.video-meta {
+  position: absolute;
+  left: 9px;
+  right: 9px;
+  bottom: 44px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 9px;
+  border-radius: 13px;
+  background: rgba(6, 8, 13, 0.76);
+  backdrop-filter: blur(12px);
+}
+
+.video-meta-main {
+  min-width: 0;
+}
+
+.video-meta-main strong {
+  display: block;
+  overflow: hidden;
+  color: #f4f5f7;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-meta-main small {
+  display: block;
+  margin-top: 3px;
+  color: #8a92a0;
+  font-size: 9px;
+}
+
+.replace-video-button {
+  flex: 0 0 auto;
+  padding: 5px 7px;
+  border: 1px solid #333a48;
+  border-radius: 9px;
+  background: #161b24;
+  color: #cbd0da;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.replace-video-button input {
+  display: none;
+}
+
+.video-fallback-button {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  padding: 6px 9px;
+  border: 1px solid rgba(242, 179, 95, 0.35);
+  border-radius: 999px;
+  background: rgba(36, 27, 13, 0.82);
+  color: #f2c37c;
+  font-size: 10px;
+  font-weight: 700;
+}
