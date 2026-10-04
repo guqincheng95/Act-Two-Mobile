@@ -7,6 +7,7 @@ const backendDraft = ref(savedBackend)
 const settingsOpen = ref(!savedBackend)
 const backendState = ref(savedBackend ? '未检测' : '未设置')
 const backendChecking = ref(false)
+const directUploadSupported = ref(false)
 
 const characterFile = ref(null)
 const characterPreview = ref('')
@@ -40,7 +41,8 @@ const apiBase = computed(() => backendUrl.value.replace(/\/+$/, ''))
 const statusLabel = computed(() => {
   const map = {
     IDLE: '等待素材',
-    UPLOADING: '上传到云端',
+    UPLOADING: '上传素材',
+    DIRECT_UPLOADING: '直传 Runway',
     FORWARDING: '云端转存',
     SUBMITTED: '已提交',
     PENDING: '排队中',
@@ -101,10 +103,12 @@ async function testBackend() {
     const payload = await response.json()
     if (!response.ok || payload.status !== 'ok') throw new Error('health check failed')
     backendState.value = `已连接 · v${payload.version || '?'}`
+    directUploadSupported.value = payload.directUpload === 'enabled'
     backendDraft.value = candidate
     backendUrl.value = candidate
     localStorage.setItem('actTwoBackendUrl', candidate)
   } catch {
+    directUploadSupported.value = false
     backendState.value = '连接失败'
   } finally {
     backendChecking.value = false
@@ -237,6 +241,140 @@ function resetResult() {
   }
 }
 
+async function initRunwayUpload(file) {
+  const response = await fetch(`${apiBase.value}/api/uploads/init`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename: file.name || 'upload.bin' }),
+  })
+  const payload = await response.json()
+  if (!response.ok) throw new Error(payload.detail || '无法申请 Runway 上传地址')
+  return payload
+}
+
+function uploadToPresignedSlot(slot, file, baseLoaded, totalBytes) {
+  return new Promise((resolve, reject) => {
+    const body = new FormData()
+    Object.entries(slot.fields || {}).forEach(([key, value]) => body.append(key, value))
+    body.append('file', file)
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', slot.uploadUrl)
+    xhr.timeout = 15 * 60 * 1000
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return
+      const loaded = Math.min(totalBytes, baseLoaded + event.loaded)
+      uploadLoadedBytes.value = loaded
+      uploadTotalBytes.value = totalBytes
+      uploadPercent.value = Math.min(100, Math.round((loaded / totalBytes) * 100))
+      taskStatus.value = 'DIRECT_UPLOADING'
+      taskDetail.value = `手机 → Runway：${uploadPercent.value}% · ${formatBytes(loaded)} / ${formatBytes(totalBytes)}`
+    }
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve(slot.runwayUri)
+      else reject(new Error(`Runway 素材上传失败（HTTP ${xhr.status}）`))
+    }
+    xhr.onerror = () => reject(new Error('手机直传 Runway 失败'))
+    xhr.ontimeout = () => reject(new Error('手机直传 Runway 超时'))
+    xhr.send(body)
+  })
+}
+
+async function submitDirectTask() {
+  const totalBytes = characterFile.value.size + referenceFile.value.size
+  uploadLoadedBytes.value = 0
+  uploadTotalBytes.value = totalBytes
+  uploadPercent.value = 0
+  taskStatus.value = 'DIRECT_UPLOADING'
+  taskDetail.value = '正在申请 Runway 临时上传地址…'
+
+  const characterSlot = await initRunwayUpload(characterFile.value)
+  const characterUri = await uploadToPresignedSlot(characterSlot, characterFile.value, 0, totalBytes)
+
+  taskDetail.value = '角色图已上传，正在上传动作视频…'
+  const referenceSlot = await initRunwayUpload(referenceFile.value)
+  const referenceUri = await uploadToPresignedSlot(
+    referenceSlot,
+    referenceFile.value,
+    characterFile.value.size,
+    totalBytes
+  )
+
+  uploadPercent.value = 100
+  uploadLoadedBytes.value = totalBytes
+  taskStatus.value = 'SUBMITTED'
+  taskDetail.value = '素材直传完成，正在创建 Act-Two 任务…'
+
+  const body = {
+    character_uri: characterUri,
+    reference_uri: referenceUri,
+    expression_intensity: expressionIntensity.value,
+    body_control: bodyControl.value,
+    ratio: ratio.value,
+  }
+  if (seed.value.trim()) body.seed = Number(seed.value.trim())
+
+  const response = await fetch(`${apiBase.value}/api/tasks/direct`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  const payload = await response.json()
+  if (!response.ok) throw new Error(payload.detail || 'Runway 任务创建失败')
+  return payload
+}
+
+async function submitRelayTask() {
+  const form = new FormData()
+  form.append('character_image', characterFile.value)
+  form.append('reference_video', referenceFile.value)
+  form.append('expression_intensity', String(expressionIntensity.value))
+  form.append('body_control', String(bodyControl.value))
+  form.append('ratio', ratio.value)
+  if (seed.value.trim()) form.append('seed', seed.value.trim())
+
+  return await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${apiBase.value}/api/tasks`)
+    xhr.responseType = 'json'
+    xhr.timeout = 15 * 60 * 1000
+
+    xhr.upload.onloadstart = () => {
+      uploadPercent.value = 0
+      taskStatus.value = 'UPLOADING'
+      taskDetail.value = '兼容模式：正在上传到阿里云…'
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return
+      uploadLoadedBytes.value = event.loaded
+      uploadTotalBytes.value = event.total
+      uploadPercent.value = Math.min(100, Math.round((event.loaded / event.total) * 100))
+      taskStatus.value = 'UPLOADING'
+      taskDetail.value = `手机 → 阿里云：${uploadPercent.value}% · ${formatBytes(event.loaded)} / ${formatBytes(event.total)}`
+    }
+
+    xhr.upload.onload = () => {
+      uploadPercent.value = 100
+      taskStatus.value = 'FORWARDING'
+      taskDetail.value = '手机上传完成，阿里云正在转存素材到 Runway…'
+    }
+
+    xhr.onload = () => {
+      const response = xhr.response || {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(response)
+      else reject(new Error(response.detail || `提交失败（HTTP ${xhr.status}）`))
+    }
+
+    xhr.onerror = () => reject(new Error('网络连接失败，请检查本地网络或云服务器'))
+    xhr.ontimeout = () => reject(new Error('上传超时，请检查视频大小和网络状态'))
+    xhr.onabort = () => reject(new Error('上传已取消'))
+    xhr.send(form)
+  })
+}
+
 async function generate() {
   if (!apiBase.value) {
     settingsOpen.value = true
@@ -246,62 +384,28 @@ async function generate() {
 
   resetResult()
   submitting.value = true
-  taskStatus.value = 'UPLOADING'
-  taskDetail.value = '正在上传角色图与动作视频…'
+  taskStatus.value = directUploadSupported.value ? 'DIRECT_UPLOADING' : 'UPLOADING'
+  taskDetail.value = directUploadSupported.value
+    ? '准备直传 Runway…'
+    : '准备兼容上传…'
+
   requestAnimationFrame(() => {
     resultSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
 
-  const form = new FormData()
-  form.append('character_image', characterFile.value)
-  form.append('reference_video', referenceFile.value)
-  form.append('expression_intensity', String(expressionIntensity.value))
-  form.append('body_control', String(bodyControl.value))
-  form.append('ratio', ratio.value)
-  if (seed.value.trim()) form.append('seed', seed.value.trim())
-
   try {
-    const payload = await new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest()
-      xhr.open('POST', `${apiBase.value}/api/tasks`)
-      xhr.responseType = 'json'
-      xhr.timeout = 15 * 60 * 1000
+    let payload
 
-      xhr.upload.onloadstart = () => {
-        uploadPercent.value = 0
-        taskStatus.value = 'UPLOADING'
-        taskDetail.value = '正在上传到阿里云…'
+    if (directUploadSupported.value) {
+      try {
+        payload = await submitDirectTask()
+      } catch (directError) {
+        taskDetail.value = `直传失败，自动切换兼容中转：${directError.message || '未知错误'}`
+        payload = await submitRelayTask()
       }
-
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable) return
-        uploadLoadedBytes.value = event.loaded
-        uploadTotalBytes.value = event.total
-        uploadPercent.value = Math.min(100, Math.round((event.loaded / event.total) * 100))
-        taskStatus.value = 'UPLOADING'
-        taskDetail.value = `手机 → 阿里云：${uploadPercent.value}% · ${formatBytes(event.loaded)} / ${formatBytes(event.total)}`
-      }
-
-      xhr.upload.onload = () => {
-        uploadPercent.value = 100
-        taskStatus.value = 'FORWARDING'
-        taskDetail.value = '手机上传完成，阿里云正在转存素材到 Runway…'
-      }
-
-      xhr.onload = () => {
-        const response = xhr.response || {}
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(response)
-        } else {
-          reject(new Error(response.detail || `提交失败（HTTP ${xhr.status}）`))
-        }
-      }
-
-      xhr.onerror = () => reject(new Error('网络连接失败，请检查本地网络或云服务器'))
-      xhr.ontimeout = () => reject(new Error('上传超时，请检查视频大小和网络状态'))
-      xhr.onabort = () => reject(new Error('上传已取消'))
-      xhr.send(form)
-    })
+    } else {
+      payload = await submitRelayTask()
+    }
 
     taskId.value = payload.id
     taskStatus.value = 'SUBMITTED'
@@ -405,6 +509,7 @@ onBeforeUnmount(() => {
         <span :class="{ online: backendState.startsWith('已连接') }"></span>
         {{ backendState }}
       </button>
+      <span v-if="directUploadSupported" class="direct-mode-badge">DIRECT · 手机直传 Runway</span>
     </section>
 
     <section v-if="settingsOpen" class="panel backend-panel">
@@ -562,9 +667,9 @@ onBeforeUnmount(() => {
         <p>{{ taskDetail }}</p>
         <div v-if="taskId && !terminalStatuses.has(taskStatus)" class="background-tip">现在可以切到后台，Runway 会继续生成；返回 App 会自动同步任务状态。</div>
         <code v-if="taskId">{{ taskId }}</code>
-        <div v-if="taskStatus === 'UPLOADING'" class="upload-progress-wrap">
+        <div v-if="taskStatus === 'UPLOADING' || taskStatus === 'DIRECT_UPLOADING'" class="upload-progress-wrap">
           <div class="upload-progress-text">
-            <span>手机 → 阿里云</span>
+            <span>{{ taskStatus === 'DIRECT_UPLOADING' ? '手机 → Runway' : '手机 → 阿里云' }}</span>
             <strong>{{ uploadPercent }}%</strong>
           </div>
           <div class="upload-progress-track">
