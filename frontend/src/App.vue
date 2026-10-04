@@ -11,6 +11,11 @@ const directUploadSupported = ref(false)
 
 const characterFile = ref(null)
 const characterPreview = ref('')
+const characterType = ref('image')
+const characterVideoEl = ref(null)
+const characterWidth = ref(0)
+const characterHeight = ref(0)
+const characterDuration = ref(0)
 const referenceFile = ref(null)
 const referencePreview = ref('')
 const referenceVideoEl = ref(null)
@@ -32,6 +37,7 @@ const submitting = ref(false)
 const uploadPercent = ref(0)
 const uploadLoadedBytes = ref(0)
 const uploadTotalBytes = ref(0)
+const lastRequestDebug = ref(null)
 let pollTimer = null
 const TASK_STORAGE_KEY = 'actTwoActiveTask'
 
@@ -121,6 +127,11 @@ function setPreview(kind, file) {
     if (characterPreview.value) URL.revokeObjectURL(characterPreview.value)
     characterFile.value = file
     characterPreview.value = URL.createObjectURL(file)
+    characterType.value = file.type?.startsWith('video/') ? 'video' : 'image'
+    characterWidth.value = 0
+    characterHeight.value = 0
+    characterDuration.value = 0
+    if (characterType.value === 'video') bodyControl.value = false
   } else {
     if (referencePreview.value) URL.revokeObjectURL(referencePreview.value)
     referenceFile.value = file
@@ -133,6 +144,38 @@ function setPreview(kind, file) {
 
 function onCharacterChange(event) {
   setPreview('character', event.target.files?.[0])
+}
+
+function chooseCharacterType(type) {
+  characterType.value = type
+  characterFile.value = null
+  if (characterPreview.value) URL.revokeObjectURL(characterPreview.value)
+  characterPreview.value = ''
+  characterWidth.value = 0
+  characterHeight.value = 0
+  characterDuration.value = 0
+  if (type === 'video') bodyControl.value = false
+}
+
+function onCharacterImageLoad(event) {
+  characterWidth.value = event.target.naturalWidth || 0
+  characterHeight.value = event.target.naturalHeight || 0
+}
+
+function onCharacterVideoMetadata(event) {
+  characterWidth.value = event.target.videoWidth || 0
+  characterHeight.value = event.target.videoHeight || 0
+  characterDuration.value = event.target.duration || 0
+  event.target.muted = true
+  event.target.loop = true
+  event.target.play().catch(() => {})
+}
+
+function toggleCharacterPlayback() {
+  const video = characterVideoEl.value
+  if (!video) return
+  if (video.paused) video.play().catch(() => {})
+  else video.pause()
 }
 
 function onReferenceChange(event) {
@@ -235,6 +278,7 @@ function resetResult() {
   uploadPercent.value = 0
   uploadLoadedBytes.value = 0
   uploadTotalBytes.value = 0
+  lastRequestDebug.value = null
   if (pollTimer) {
     clearTimeout(pollTimer)
     pollTimer = null
@@ -310,8 +354,9 @@ async function submitDirectTask() {
   const body = {
     character_uri: characterUri,
     reference_uri: referenceUri,
+    character_type: characterType.value,
     expression_intensity: expressionIntensity.value,
-    body_control: bodyControl.value,
+    body_control: characterType.value === 'image' ? bodyControl.value : false,
     ratio: ratio.value,
   }
   if (seed.value.trim()) body.seed = Number(seed.value.trim())
@@ -328,10 +373,11 @@ async function submitDirectTask() {
 
 async function submitRelayTask() {
   const form = new FormData()
-  form.append('character_image', characterFile.value)
+  form.append('character_file', characterFile.value)
+  form.append('character_type', characterType.value)
   form.append('reference_video', referenceFile.value)
   form.append('expression_intensity', String(expressionIntensity.value))
-  form.append('body_control', String(bodyControl.value))
+  form.append('body_control', String(characterType.value === 'image' ? bodyControl.value : false))
   form.append('ratio', ratio.value)
   if (seed.value.trim()) form.append('seed', seed.value.trim())
 
@@ -408,6 +454,15 @@ async function generate() {
     }
 
     taskId.value = payload.id
+    lastRequestDebug.value = payload.debug || {
+      model: 'act_two',
+      character_type: characterType.value,
+      reference_type: 'video',
+      expression_intensity: expressionIntensity.value,
+      body_control: characterType.value === 'image' ? bodyControl.value : false,
+      ratio: ratio.value,
+      seed: seed.value.trim() || null,
+    }
     taskStatus.value = 'SUBMITTED'
     taskDetail.value = 'Runway 已接收任务，可切到后台继续等待'
     persistTask()
@@ -539,17 +594,78 @@ onBeforeUnmount(() => {
       <p class="backend-hint">可填写局域网或公网后端地址。当前云服务器示例：http://8.211.148.39:8000。</p>
     </section>
 
-    <section class="upload-grid">
-      <label class="upload-card">
-        <input type="file" accept="image/*" @change="onCharacterChange" />
-        <div v-if="!characterPreview" class="empty-state">
-          <span class="plus">＋</span>
-          <strong>角色参考图</strong>
-          <small>从相册选择图片</small>
+    <section class="panel character-mode-panel">
+      <div class="character-mode-title">
+        <div>
+          <strong>角色来源</strong>
+          <small>Act-Two 官方支持角色图片或角色视频</small>
         </div>
-        <img v-else :src="characterPreview" alt="角色参考预览" />
-        <div v-if="characterPreview" class="file-badge">角色图</div>
-      </label>
+        <span>CHARACTER</span>
+      </div>
+      <div class="character-mode-tabs">
+        <button type="button" :class="{ active: characterType === 'image' }" @click="chooseCharacterType('image')">
+          角色图片
+          <small>支持肢体动作迁移</small>
+        </button>
+        <button type="button" :class="{ active: characterType === 'video' }" @click="chooseCharacterType('video')">
+          角色视频
+          <small>保留原视频身体/镜头运动</small>
+        </button>
+      </div>
+    </section>
+
+    <section class="upload-grid">
+      <div class="upload-card character-upload-card">
+        <label v-if="!characterPreview" class="video-pick-area">
+          <input
+            type="file"
+            :accept="characterType === 'image' ? 'image/*' : 'video/*'"
+            @change="onCharacterChange"
+          />
+          <div class="empty-state">
+            <span class="plus">＋</span>
+            <strong>{{ characterType === 'image' ? '角色参考图' : '角色参考视频' }}</strong>
+            <small>{{ characterType === 'image' ? '建议单人、腰部以内、五官清晰' : '建议单人、无切镜、接近动作视频时长' }}</small>
+          </div>
+        </label>
+
+        <template v-else>
+          <img
+            v-if="characterType === 'image'"
+            :src="characterPreview"
+            alt="角色参考预览"
+            @load="onCharacterImageLoad"
+          />
+          <video
+            v-else
+            ref="characterVideoEl"
+            class="reference-player"
+            :src="characterPreview"
+            autoplay
+            loop
+            muted
+            preload="metadata"
+            playsinline
+            webkit-playsinline
+            @loadedmetadata="onCharacterVideoMetadata"
+            @click="toggleCharacterPlayback"
+          ></video>
+          <div class="file-badge">{{ characterType === 'image' ? '角色图' : '角色视频' }}</div>
+          <div class="asset-meta-badge">
+            {{ characterWidth && characterHeight ? characterWidth + '×' + characterHeight : '读取尺寸…' }}
+            <template v-if="characterType === 'video'"> · {{ formatDuration(characterDuration) }}</template>
+            · {{ formatBytes(characterFile?.size || 0) }}
+          </div>
+          <label class="asset-replace-button">
+            更换
+            <input
+              type="file"
+              :accept="characterType === 'image' ? 'image/*' : 'video/*'"
+              @change="onCharacterChange"
+            />
+          </label>
+        </template>
+      </div>
 
       <div class="upload-card video-upload-card">
         <label v-if="!referencePreview" class="video-pick-area">
@@ -606,6 +722,21 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
+    <section class="panel input-guide">
+      <div class="input-guide-title">
+        <strong>输入检查</strong>
+        <span>{{ characterType === 'image' ? '图片模式' : '视频模式' }}</span>
+      </div>
+      <div class="guide-grid">
+        <div>✓ 单一主体，脸部清晰可见</div>
+        <div>✓ 最远建议腰部构图</div>
+        <div>✓ 动作视频不要切镜</div>
+        <div>✓ 动作视频起始姿态尽量接近角色素材</div>
+        <div v-if="characterType === 'image'">✓ 需要手势时，双手从第一帧就在画面内</div>
+        <div v-else>✓ 角色视频尽量接近动作视频时长，避免明显回摆循环</div>
+      </div>
+    </section>
+
     <section class="panel controls">
       <div class="control-row">
         <div><span class="label">表情强度</span><small>Expression Intensity</small></div>
@@ -617,8 +748,17 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="control-row">
-        <div><span class="label">身体动作</span><small>Body Control</small></div>
-        <button type="button" class="switch" :class="{ active: bodyControl }" @click="bodyControl = !bodyControl">
+        <div>
+          <span class="label">肢体动作迁移</span>
+          <small>{{ characterType === 'image' ? 'Gesture / Body Control' : '角色视频模式不可用' }}</small>
+        </div>
+        <button
+          type="button"
+          class="switch"
+          :class="{ active: bodyControl && characterType === 'image', disabled: characterType === 'video' }"
+          :disabled="characterType === 'video'"
+          @click="bodyControl = !bodyControl"
+        >
           <span></span>
         </button>
       </div>
@@ -687,6 +827,22 @@ onBeforeUnmount(() => {
           <a :href="resultUrl" target="_blank" rel="noopener">全屏打开</a>
           <a :href="resultUrl" download>下载视频</a>
         </div>
+      </div>
+    </section>
+
+    <section v-if="lastRequestDebug" class="panel request-debug-panel">
+      <div class="request-debug-title">
+        <strong>本次 Act-Two 请求</strong>
+        <span>脱敏参数</span>
+      </div>
+      <div class="debug-grid">
+        <div><small>模型</small><strong>{{ lastRequestDebug.model }}</strong></div>
+        <div><small>角色输入</small><strong>{{ lastRequestDebug.character_type === 'video' ? '视频' : '图片' }}</strong></div>
+        <div><small>动作输入</small><strong>视频</strong></div>
+        <div><small>表情强度</small><strong>{{ lastRequestDebug.expression_intensity }}</strong></div>
+        <div><small>肢体动作</small><strong>{{ lastRequestDebug.body_control ? '开启' : '关闭' }}</strong></div>
+        <div><small>输出比例</small><strong>{{ lastRequestDebug.ratio }}</strong></div>
+        <div><small>Seed</small><strong>{{ lastRequestDebug.seed ?? '随机' }}</strong></div>
       </div>
     </section>
 
