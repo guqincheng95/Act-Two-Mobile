@@ -25,6 +25,7 @@ async def create_act_two_task(
     *,
     character_path: Path,
     reference_path: Path,
+    character_type: str = "image",
     expression_intensity: int = 3,
     ratio: str = "720:1280",
     seed: int | None = None,
@@ -37,7 +38,7 @@ async def create_act_two_task(
 
     params: dict[str, Any] = {
         "model": "act_two",
-        "character": {"type": "image", "uri": character_uri},
+        "character": {"type": character_type, "uri": character_uri},
         "reference": {"type": "video", "uri": reference_uri},
         "expression_intensity": expression_intensity,
         "ratio": ratio,
@@ -101,6 +102,7 @@ async def create_act_two_task_from_uris(
     *,
     character_uri: str,
     reference_uri: str,
+    character_type: str = "image",
     expression_intensity: int = 3,
     ratio: str = "720:1280",
     seed: int | None = None,
@@ -109,7 +111,7 @@ async def create_act_two_task_from_uris(
     client = get_client()
     params: dict[str, Any] = {
         "model": "act_two",
-        "character": {"type": "image", "uri": character_uri},
+        "character": {"type": character_type, "uri": character_uri},
         "reference": {"type": "video", "uri": reference_uri},
         "expression_intensity": expression_intensity,
         "ratio": ratio,
