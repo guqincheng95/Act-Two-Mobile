@@ -1,7 +1,12 @@
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || ''
+const savedBackend = localStorage.getItem('actTwoBackendUrl') || import.meta.env.VITE_API_BASE_URL || ''
+const backendUrl = ref(savedBackend)
+const backendDraft = ref(savedBackend)
+const settingsOpen = ref(!savedBackend)
+const backendState = ref(savedBackend ? '未检测' : '未设置')
+const backendChecking = ref(false)
 
 const characterFile = ref(null)
 const characterPreview = ref('')
@@ -22,6 +27,7 @@ let pollTimer = null
 
 const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED'])
 
+const apiBase = computed(() => backendUrl.value.replace(/\/+$/, ''))
 const statusLabel = computed(() => {
   const map = {
     IDLE: '等待素材',
@@ -39,12 +45,57 @@ const statusLabel = computed(() => {
 })
 
 const canGenerate = computed(
-  () => characterFile.value && referenceFile.value && !submitting.value
+  () => characterFile.value && referenceFile.value && apiBase.value && !submitting.value
 )
+
+function normalizeBackend(value) {
+  const trimmed = value.trim()
+  if (!trimmed) return ''
+  if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/\/+$/, '')
+  return `http://${trimmed.replace(/\/+$/, '')}`
+}
+
+function saveBackend() {
+  const normalized = normalizeBackend(backendDraft.value)
+  backendUrl.value = normalized
+  backendDraft.value = normalized
+  if (normalized) {
+    localStorage.setItem('actTwoBackendUrl', normalized)
+    backendState.value = '未检测'
+  } else {
+    localStorage.removeItem('actTwoBackendUrl')
+    backendState.value = '未设置'
+  }
+  settingsOpen.value = false
+}
+
+async function testBackend() {
+  const candidate = normalizeBackend(backendDraft.value || backendUrl.value)
+  if (!candidate) {
+    backendState.value = '未设置'
+    settingsOpen.value = true
+    return
+  }
+
+  backendChecking.value = true
+  backendState.value = '检测中'
+  try {
+    const response = await fetch(`${candidate}/health`, { cache: 'no-store' })
+    const payload = await response.json()
+    if (!response.ok || payload.status !== 'ok') throw new Error('health check failed')
+    backendState.value = `已连接 · v${payload.version || '?'}`
+    backendDraft.value = candidate
+    backendUrl.value = candidate
+    localStorage.setItem('actTwoBackendUrl', candidate)
+  } catch {
+    backendState.value = '连接失败'
+  } finally {
+    backendChecking.value = false
+  }
+}
 
 function setPreview(kind, file) {
   if (!file) return
-
   if (kind === 'character') {
     if (characterPreview.value) URL.revokeObjectURL(characterPreview.value)
     characterFile.value = file
@@ -76,6 +127,10 @@ function resetResult() {
 }
 
 async function generate() {
+  if (!apiBase.value) {
+    settingsOpen.value = true
+    return
+  }
   if (!canGenerate.value) return
 
   resetResult()
@@ -92,15 +147,12 @@ async function generate() {
   if (seed.value.trim()) form.append('seed', seed.value.trim())
 
   try {
-    const response = await fetch(`${API_BASE}/api/tasks`, {
+    const response = await fetch(`${apiBase.value}/api/tasks`, {
       method: 'POST',
       body: form,
     })
-
     const payload = await response.json()
-    if (!response.ok) {
-      throw new Error(payload.detail || '提交失败')
-    }
+    if (!response.ok) throw new Error(payload.detail || '提交失败')
 
     taskId.value = payload.id
     taskStatus.value = 'SUBMITTED'
@@ -121,14 +173,10 @@ function schedulePoll(delay = 5200) {
 
 async function pollTask() {
   if (!taskId.value) return
-
   try {
-    const response = await fetch(`${API_BASE}/api/tasks/${taskId.value}`)
+    const response = await fetch(`${apiBase.value}/api/tasks/${taskId.value}`)
     const payload = await response.json()
-
-    if (!response.ok) {
-      throw new Error(payload.detail || '状态查询失败')
-    }
+    if (!response.ok) throw new Error(payload.detail || '状态查询失败')
 
     taskStatus.value = payload.status || 'UNKNOWN'
     taskDetail.value =
@@ -164,9 +212,45 @@ onBeforeUnmount(() => {
 <template>
   <main class="app-shell">
     <section class="hero">
-      <div class="eyebrow">RUNWAY · ACT-TWO</div>
-      <h1>动作迁移</h1>
+      <div class="hero-top">
+        <div>
+          <div class="eyebrow">RUNWAY · ACT-TWO</div>
+          <h1>动作迁移</h1>
+        </div>
+        <button type="button" class="settings-button" @click="settingsOpen = !settingsOpen">后端</button>
+      </div>
       <p>角色参考 + 动作视频，手机直接提交生成。</p>
+      <button type="button" class="backend-chip" @click="settingsOpen = true">
+        <span :class="{ online: backendState.startsWith('已连接') }"></span>
+        {{ backendState }}
+      </button>
+    </section>
+
+    <section v-if="settingsOpen" class="panel backend-panel">
+      <div class="panel-title">
+        <div>
+          <strong>后端连接</strong>
+          <small>APK 不保存 API Key，只连接你的 FastAPI 后端</small>
+        </div>
+        <button type="button" class="close-button" @click="settingsOpen = false">×</button>
+      </div>
+      <div class="field-group">
+        <label for="backend">后端地址</label>
+        <input
+          id="backend"
+          v-model="backendDraft"
+          inputmode="url"
+          placeholder="例如 192.168.1.8:8000"
+          autocomplete="off"
+        />
+      </div>
+      <div class="backend-actions">
+        <button type="button" class="secondary-button" :disabled="backendChecking" @click="testBackend">
+          {{ backendChecking ? '检测中…' : '测试连接' }}
+        </button>
+        <button type="button" class="primary-small" @click="saveBackend">保存</button>
+      </div>
+      <p class="backend-hint">电脑与手机同一 Wi-Fi 时，填写电脑局域网 IP，例如 http://192.168.1.8:8000。</p>
     </section>
 
     <section class="upload-grid">
@@ -195,10 +279,7 @@ onBeforeUnmount(() => {
 
     <section class="panel controls">
       <div class="control-row">
-        <div>
-          <span class="label">表情强度</span>
-          <small>Expression Intensity</small>
-        </div>
+        <div><span class="label">表情强度</span><small>Expression Intensity</small></div>
         <div class="stepper">
           <button type="button" @click="expressionIntensity = Math.max(1, expressionIntensity - 1)">−</button>
           <strong>{{ expressionIntensity }}</strong>
@@ -207,17 +288,8 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="control-row">
-        <div>
-          <span class="label">身体动作</span>
-          <small>Body Control</small>
-        </div>
-        <button
-          type="button"
-          class="switch"
-          :class="{ active: bodyControl }"
-          @click="bodyControl = !bodyControl"
-          :aria-pressed="bodyControl"
-        >
+        <div><span class="label">身体动作</span><small>Body Control</small></div>
+        <button type="button" class="switch" :class="{ active: bodyControl }" @click="bodyControl = !bodyControl">
           <span></span>
         </button>
       </div>
@@ -245,43 +317,31 @@ onBeforeUnmount(() => {
 
     <button class="generate-button" :disabled="!canGenerate" @click="generate">
       <span v-if="submitting" class="spinner"></span>
-      {{ submitting ? '正在提交…' : '开始生成' }}
+      {{ !apiBase ? '先设置后端地址' : submitting ? '正在提交…' : '开始生成' }}
     </button>
 
     <section v-if="taskStatus !== 'IDLE'" class="panel status-panel">
       <div class="status-top">
-        <div>
-          <small>任务状态</small>
-          <strong>{{ statusLabel }}</strong>
-        </div>
+        <div><small>任务状态</small><strong>{{ statusLabel }}</strong></div>
         <span class="status-dot" :class="taskStatus.toLowerCase()"></span>
       </div>
-
       <p>{{ taskDetail }}</p>
       <code v-if="taskId">{{ taskId }}</code>
-
-      <div v-if="!terminalStatuses.has(taskStatus)" class="progress-track">
-        <span></span>
-      </div>
+      <div v-if="!terminalStatuses.has(taskStatus)" class="progress-track"><span></span></div>
     </section>
 
     <section v-if="resultUrl" class="result-card">
       <div class="result-heading">
-        <div>
-          <small>OUTPUT</small>
-          <h2>生成结果</h2>
-        </div>
+        <div><small>OUTPUT</small><h2>生成结果</h2></div>
         <span>完成</span>
       </div>
-
       <video :src="resultUrl" controls playsinline preload="metadata"></video>
-
       <div class="result-actions">
         <a :href="resultUrl" target="_blank" rel="noopener">全屏打开</a>
         <a :href="resultUrl" download>下载视频</a>
       </div>
     </section>
 
-    <p class="footnote">API Key 仅保存在后端，不会发送到手机前端。</p>
+    <p class="footnote">Runway API Key 只保存在后端 .env，不进入 APK。</p>
   </main>
 </template>
