@@ -5,7 +5,7 @@ const config: CapacitorConfig = {
   appName: 'Act-Two Mobile',
   webDir: 'dist',
   server: {
-    androidScheme: 'https',
+    androidScheme: 'http',
   },
 }
 
