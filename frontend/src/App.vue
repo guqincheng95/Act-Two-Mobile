@@ -8,6 +8,7 @@ const settingsOpen = ref(!savedBackend)
 const backendState = ref(savedBackend ? '未检测' : '未设置')
 const backendChecking = ref(false)
 const directUploadSupported = ref(false)
+const characterVideoSupported = ref(false)
 
 const characterFile = ref(null)
 const characterPreview = ref('')
@@ -63,7 +64,12 @@ const statusLabel = computed(() => {
 })
 
 const canGenerate = computed(
-  () => characterFile.value && referenceFile.value && apiBase.value && !submitting.value
+  () =>
+    characterFile.value &&
+    referenceFile.value &&
+    apiBase.value &&
+    !submitting.value &&
+    (characterType.value === 'image' || characterVideoSupported.value)
 )
 
 function normalizeBackend(value) {
@@ -110,11 +116,13 @@ async function testBackend() {
     if (!response.ok || payload.status !== 'ok') throw new Error('health check failed')
     backendState.value = `已连接 · v${payload.version || '?'}`
     directUploadSupported.value = payload.directUpload === 'enabled'
+    characterVideoSupported.value = payload.characterVideo === 'enabled'
     backendDraft.value = candidate
     backendUrl.value = candidate
     localStorage.setItem('actTwoBackendUrl', candidate)
   } catch {
     directUploadSupported.value = false
+    characterVideoSupported.value = false
     backendState.value = '连接失败'
   } finally {
     backendChecking.value = false
@@ -147,6 +155,7 @@ function onCharacterChange(event) {
 }
 
 function chooseCharacterType(type) {
+  if (type === 'video' && !characterVideoSupported.value) return
   characterType.value = type
   characterFile.value = null
   if (characterPreview.value) URL.revokeObjectURL(characterPreview.value)
@@ -373,8 +382,12 @@ async function submitDirectTask() {
 
 async function submitRelayTask() {
   const form = new FormData()
-  form.append('character_file', characterFile.value)
-  form.append('character_type', characterType.value)
+  if (characterVideoSupported.value) {
+    form.append('character_file', characterFile.value)
+    form.append('character_type', characterType.value)
+  } else {
+    form.append('character_image', characterFile.value)
+  }
   form.append('reference_video', referenceFile.value)
   form.append('expression_intensity', String(expressionIntensity.value))
   form.append('body_control', String(characterType.value === 'image' ? bodyControl.value : false))
@@ -607,9 +620,14 @@ onBeforeUnmount(() => {
           角色图片
           <small>支持肢体动作迁移</small>
         </button>
-        <button type="button" :class="{ active: characterType === 'video' }" @click="chooseCharacterType('video')">
+        <button
+          type="button"
+          :class="{ active: characterType === 'video', unavailable: !characterVideoSupported }"
+          :disabled="!characterVideoSupported"
+          @click="chooseCharacterType('video')"
+        >
           角色视频
-          <small>保留原视频身体/镜头运动</small>
+          <small>{{ characterVideoSupported ? '保留原视频身体/镜头运动' : '需要新版后端 v0.2.1+' }}</small>
         </button>
       </div>
     </section>
