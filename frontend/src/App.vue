@@ -12,6 +12,10 @@ const characterFile = ref(null)
 const characterPreview = ref('')
 const referenceFile = ref(null)
 const referencePreview = ref('')
+const referenceVideoEl = ref(null)
+const referenceDuration = ref(0)
+const referenceLoadState = ref('idle')
+const referenceLoadMessage = ref('')
 
 const expressionIntensity = ref(3)
 const bodyControl = ref(true)
@@ -111,6 +115,9 @@ function setPreview(kind, file) {
     if (referencePreview.value) URL.revokeObjectURL(referencePreview.value)
     referenceFile.value = file
     referencePreview.value = URL.createObjectURL(file)
+    referenceDuration.value = 0
+    referenceLoadState.value = 'loading'
+    referenceLoadMessage.value = '文件已选择，正在读取视频信息…'
   }
 }
 
@@ -120,6 +127,49 @@ function onCharacterChange(event) {
 
 function onReferenceChange(event) {
   setPreview('reference', event.target.files?.[0])
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB'
+  const mb = bytes / 1024 / 1024
+  return mb >= 100 ? `${mb.toFixed(0)} MB` : `${mb.toFixed(1)} MB`
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '--:--'
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+}
+
+function onReferenceLoadedMetadata(event) {
+  referenceDuration.value = event.target.duration || 0
+  referenceLoadState.value = 'ready'
+  referenceLoadMessage.value = '视频已就绪，可直接预览和提交'
+}
+
+function onReferenceCanPlay() {
+  referenceLoadState.value = 'ready'
+  referenceLoadMessage.value = '视频已就绪，可直接预览和提交'
+}
+
+function onReferenceError() {
+  referenceLoadState.value = 'preview-error'
+  referenceLoadMessage.value = '当前视频编码无法在内置播放器中预览，但文件仍可继续上传生成'
+}
+
+function toggleReferencePlayback() {
+  const video = referenceVideoEl.value
+  if (!video) return
+
+  if (video.paused) {
+    video.play().catch(() => {
+      referenceLoadState.value = 'preview-error'
+      referenceLoadMessage.value = '当前视频无法在内置播放器中播放，但文件仍可继续上传生成'
+    })
+  } else {
+    video.pause()
+  }
 }
 
 function resetResult() {
@@ -278,16 +328,56 @@ onBeforeUnmount(() => {
         <div v-if="characterPreview" class="file-badge">角色图</div>
       </label>
 
-      <label class="upload-card">
-        <input type="file" accept="video/*" @change="onReferenceChange" />
-        <div v-if="!referencePreview" class="empty-state">
-          <span class="plus">＋</span>
-          <strong>动作参考视频</strong>
-          <small>建议 3–30 秒</small>
-        </div>
-        <video v-else :src="referencePreview" muted playsinline />
-        <div v-if="referencePreview" class="file-badge">动作视频</div>
-      </label>
+      <div class="upload-card video-upload-card">
+        <label v-if="!referencePreview" class="video-pick-area">
+          <input type="file" accept="video/*" @change="onReferenceChange" />
+          <div class="empty-state">
+            <span class="plus">＋</span>
+            <strong>动作参考视频</strong>
+            <small>建议 3–30 秒</small>
+          </div>
+        </label>
+
+        <template v-else>
+          <video
+            ref="referenceVideoEl"
+            class="reference-player"
+            :src="referencePreview"
+            controls
+            preload="metadata"
+            playsinline
+            webkit-playsinline
+            @loadedmetadata="onReferenceLoadedMetadata"
+            @canplay="onReferenceCanPlay"
+            @error="onReferenceError"
+          ></video>
+
+          <div class="video-overlay-top">
+            <span class="video-ready-dot" :class="referenceLoadState"></span>
+            <span>{{ referenceLoadState === 'ready' ? '已选择' : referenceLoadState === 'preview-error' ? '预览受限' : '读取中' }}</span>
+          </div>
+
+          <div class="video-meta">
+            <div class="video-meta-main">
+              <strong>{{ referenceFile?.name || '动作视频' }}</strong>
+              <small>{{ formatDuration(referenceDuration) }} · {{ formatBytes(referenceFile?.size || 0) }}</small>
+            </div>
+            <label class="replace-video-button">
+              更换
+              <input type="file" accept="video/*" @change="onReferenceChange" />
+            </label>
+          </div>
+
+          <button
+            v-if="referenceLoadState === 'preview-error'"
+            type="button"
+            class="video-fallback-button"
+            @click="toggleReferencePlayback"
+          >
+            尝试播放
+          </button>
+        </template>
+      </div>
     </section>
 
     <section class="panel controls">
