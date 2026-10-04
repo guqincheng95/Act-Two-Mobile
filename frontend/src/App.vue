@@ -29,6 +29,7 @@ const resultUrl = ref('')
 const resultSectionEl = ref(null)
 const submitting = ref(false)
 let pollTimer = null
+const TASK_STORAGE_KEY = 'actTwoActiveTask'
 
 const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'CANCELED', 'CANCELLED'])
 
@@ -179,6 +180,45 @@ function toggleReferencePlayback() {
   }
 }
 
+function persistTask() {
+  if (!taskId.value) return
+  localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify({
+    id: taskId.value,
+    status: taskStatus.value,
+    detail: taskDetail.value,
+    resultUrl: resultUrl.value,
+    backendUrl: apiBase.value,
+    updatedAt: Date.now(),
+  }))
+}
+
+function clearPersistedTask() {
+  localStorage.removeItem(TASK_STORAGE_KEY)
+}
+
+function restorePersistedTask() {
+  try {
+    const raw = localStorage.getItem(TASK_STORAGE_KEY)
+    if (!raw) return false
+    const saved = JSON.parse(raw)
+    if (!saved?.id) return false
+
+    taskId.value = saved.id
+    taskStatus.value = saved.status || 'SUBMITTED'
+    taskDetail.value = saved.detail || '正在恢复后台任务…'
+    resultUrl.value = saved.resultUrl || ''
+
+    if (saved.backendUrl && !backendUrl.value) {
+      backendUrl.value = saved.backendUrl
+      backendDraft.value = saved.backendUrl
+    }
+    return true
+  } catch {
+    clearPersistedTask()
+    return false
+  }
+}
+
 function resetResult() {
   taskId.value = ''
   taskStatus.value = 'IDLE'
@@ -223,7 +263,8 @@ async function generate() {
 
     taskId.value = payload.id
     taskStatus.value = 'SUBMITTED'
-    taskDetail.value = 'Runway 已接收任务'
+    taskDetail.value = 'Runway 已接收任务，可切到后台继续等待'
+    persistTask()
     schedulePoll(1200)
   } catch (error) {
     taskStatus.value = 'FAILED'
@@ -255,9 +296,12 @@ async function pollTask() {
       const output = Array.isArray(payload.output) ? payload.output : []
       resultUrl.value = output[0] || ''
       taskDetail.value = resultUrl.value ? '生成完成，视频已经返回' : '任务完成，但暂未收到视频地址'
+      persistTask()
       requestAnimationFrame(() => {
         resultSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       })
+    } else {
+      persistTask()
     }
 
     if (!terminalStatuses.has(taskStatus.value)) {
@@ -265,6 +309,7 @@ async function pollTask() {
     }
   } catch (error) {
     taskDetail.value = error.message || '状态查询暂时失败'
+    persistTask()
     schedulePoll(8000)
   }
 }
@@ -273,13 +318,30 @@ function randomSeed() {
   seed.value = String(Math.floor(Math.random() * 4294967295))
 }
 
+function handleVisibilityChange() {
+  if (document.visibilityState === 'visible' && taskId.value && !terminalStatuses.has(taskStatus.value)) {
+    if (pollTimer) clearTimeout(pollTimer)
+    pollTask()
+  }
+}
+
 onMounted(() => {
   if (savedBackend) {
     testBackend()
   }
+
+  if (restorePersistedTask()) {
+    if (!terminalStatuses.has(taskStatus.value)) {
+      taskDetail.value = '后台任务已恢复，正在同步最新状态…'
+      pollTask()
+    }
+  }
+
+  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', handleVisibilityChange)
   if (pollTimer) clearTimeout(pollTimer)
   if (characterPreview.value) URL.revokeObjectURL(characterPreview.value)
   if (referencePreview.value) URL.revokeObjectURL(referencePreview.value)
@@ -456,6 +518,7 @@ onBeforeUnmount(() => {
         </div>
         <strong>{{ statusLabel }}</strong>
         <p>{{ taskDetail }}</p>
+        <div v-if="taskId && !terminalStatuses.has(taskStatus)" class="background-tip">现在可以切到后台，Runway 会继续生成；返回 App 会自动同步任务状态。</div>
         <code v-if="taskId">{{ taskId }}</code>
         <div v-if="!terminalStatuses.has(taskStatus)" class="progress-track"><span></span></div>
       </div>
