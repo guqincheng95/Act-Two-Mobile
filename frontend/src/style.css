@@ -705,3 +705,47 @@ label {
   font-size: 11px;
   line-height: 1.55;
 }
+
+
+.upload-progress-wrap {
+  margin-top: 16px;
+  text-align: left;
+}
+
+.upload-progress-text {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+  color: #a7afbc;
+  font-size: 11px;
+}
+
+.upload-progress-text strong {
+  color: #dfe3ea;
+  font-size: 12px;
+}
+
+.upload-progress-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #1c2029;
+}
+
+.upload-progress-track span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #7080ff;
+  transition: width .18s ease;
+}
+
+.upload-progress-wrap small {
+  display: block;
+  margin-top: 7px;
+  color: #68717e;
+  font-size: 10px;
+}
