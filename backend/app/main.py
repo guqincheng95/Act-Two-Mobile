@@ -72,7 +72,7 @@ async def init_upload(request: UploadInitRequest) -> dict:
 
 
 @app.post("/api/tasks/direct")
-async def create_direct_task(request: DirectTaskRequest) -> dict[str, str]:
+async def create_direct_task(request: DirectTaskRequest) -> dict:
     if not 1 <= request.expression_intensity <= 5:
         raise HTTPException(status_code=400, detail="expression_intensity must be between 1 and 5")
     if request.ratio not in ALLOWED_RATIOS:
@@ -167,7 +167,19 @@ async def create_task(
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"Runway submission failed: {exc}") from exc
 
-    return {"id": task_id, "status": "SUBMITTED"}
+    return {
+        "id": task_id,
+        "status": "SUBMITTED",
+        "debug": {
+            "model": "act_two",
+            "character_type": character_type,
+            "reference_type": "video",
+            "expression_intensity": expression_intensity,
+            "body_control": (body_control if character_type == "image" else False),
+            "ratio": ratio,
+            "seed": parsed_seed,
+        },
+    }
 
 
 @app.get("/api/tasks/{task_id}")
