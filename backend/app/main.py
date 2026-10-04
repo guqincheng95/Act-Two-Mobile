@@ -8,14 +8,20 @@ from typing import Annotated
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from app.services.runway import create_act_two_task, retrieve_task
+from app.services.runway import (
+    create_act_two_task,
+    create_act_two_task_from_uris,
+    create_ephemeral_upload_slot,
+    retrieve_task,
+)
 
 load_dotenv()
 
 app = FastAPI(
     title="Act-Two-Mobile API",
-    version="0.1.0",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -38,7 +44,54 @@ ALLOWED_RATIOS = {
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.2.0", "directUpload": "enabled"}
+
+
+class UploadInitRequest(BaseModel):
+    filename: str
+
+
+class DirectTaskRequest(BaseModel):
+    character_uri: str
+    reference_uri: str
+    expression_intensity: int = 3
+    ratio: str = "720:1280"
+    seed: int | None = None
+    body_control: bool = True
+
+
+@app.post("/api/uploads/init")
+async def init_upload(request: UploadInitRequest) -> dict:
+    if not request.filename or len(request.filename) > 255:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    try:
+        return await create_ephemeral_upload_slot(request.filename)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Runway upload init failed: {exc}") from exc
+
+
+@app.post("/api/tasks/direct")
+async def create_direct_task(request: DirectTaskRequest) -> dict[str, str]:
+    if not 1 <= request.expression_intensity <= 5:
+        raise HTTPException(status_code=400, detail="expression_intensity must be between 1 and 5")
+    if request.ratio not in ALLOWED_RATIOS:
+        raise HTTPException(status_code=400, detail="Unsupported output ratio")
+    if not request.character_uri.startswith("runway://") or not request.reference_uri.startswith("runway://"):
+        raise HTTPException(status_code=400, detail="Direct task requires runway:// asset URIs")
+
+    try:
+        task_id = await create_act_two_task_from_uris(
+            character_uri=request.character_uri,
+            reference_uri=request.reference_uri,
+            expression_intensity=request.expression_intensity,
+            ratio=request.ratio,
+            seed=request.seed,
+            body_control=request.body_control,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Runway submission failed: {exc}") from exc
+
+    return {"id": task_id, "status": "SUBMITTED"}
 
 
 @app.post("/api/tasks")
