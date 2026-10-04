@@ -26,6 +26,7 @@ const taskId = ref('')
 const taskStatus = ref('IDLE')
 const taskDetail = ref('')
 const resultUrl = ref('')
+const resultSectionEl = ref(null)
 const submitting = ref(false)
 let pollTimer = null
 
@@ -151,6 +152,12 @@ function onReferenceLoadedMetadata(event) {
 function onReferenceCanPlay() {
   referenceLoadState.value = 'ready'
   referenceLoadMessage.value = '视频已就绪，可直接预览和提交'
+  const video = referenceVideoEl.value
+  if (video) {
+    video.muted = true
+    video.loop = true
+    video.play().catch(() => {})
+  }
 }
 
 function onReferenceError() {
@@ -194,6 +201,9 @@ async function generate() {
   submitting.value = true
   taskStatus.value = 'UPLOADING'
   taskDetail.value = '正在上传角色图与动作视频…'
+  requestAnimationFrame(() => {
+    resultSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
 
   const form = new FormData()
   form.append('character_image', characterFile.value)
@@ -244,6 +254,10 @@ async function pollTask() {
     if (taskStatus.value === 'SUCCEEDED') {
       const output = Array.isArray(payload.output) ? payload.output : []
       resultUrl.value = output[0] || ''
+      taskDetail.value = resultUrl.value ? '生成完成，视频已经返回' : '任务完成，但暂未收到视频地址'
+      requestAnimationFrame(() => {
+        resultSectionEl.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
     }
 
     if (!terminalStatuses.has(taskStatus.value)) {
@@ -343,13 +357,16 @@ onBeforeUnmount(() => {
             ref="referenceVideoEl"
             class="reference-player"
             :src="referencePreview"
-            controls
+            autoplay
+            loop
+            muted
             preload="metadata"
             playsinline
             webkit-playsinline
             @loadedmetadata="onReferenceLoadedMetadata"
             @canplay="onReferenceCanPlay"
             @error="onReferenceError"
+            @click="toggleReferencePlayback"
           ></video>
 
           <div class="video-overlay-top">
@@ -423,25 +440,33 @@ onBeforeUnmount(() => {
       {{ !apiBase ? '先设置后端地址' : submitting ? '正在提交…' : '开始生成' }}
     </button>
 
-    <section v-if="taskStatus !== 'IDLE'" class="panel status-panel">
-      <div class="status-top">
-        <div><small>任务状态</small><strong>{{ statusLabel }}</strong></div>
-        <span class="status-dot" :class="taskStatus.toLowerCase()"></span>
+    <section v-if="taskStatus !== 'IDLE'" ref="resultSectionEl" class="result-zone">
+      <div class="result-zone-heading">
+        <div>
+          <small>RESULT</small>
+          <h2>生成结果</h2>
+        </div>
+        <span class="result-state-pill" :class="taskStatus.toLowerCase()">{{ statusLabel }}</span>
       </div>
-      <p>{{ taskDetail }}</p>
-      <code v-if="taskId">{{ taskId }}</code>
-      <div v-if="!terminalStatuses.has(taskStatus)" class="progress-track"><span></span></div>
-    </section>
 
-    <section v-if="resultUrl" class="result-card">
-      <div class="result-heading">
-        <div><small>OUTPUT</small><h2>生成结果</h2></div>
-        <span>完成</span>
+      <div v-if="!resultUrl" class="panel result-waiting">
+        <div class="result-placeholder-icon">
+          <span v-if="taskStatus === 'FAILED'">!</span>
+          <span v-else class="spinner"></span>
+        </div>
+        <strong>{{ statusLabel }}</strong>
+        <p>{{ taskDetail }}</p>
+        <code v-if="taskId">{{ taskId }}</code>
+        <div v-if="!terminalStatuses.has(taskStatus)" class="progress-track"><span></span></div>
       </div>
-      <video :src="resultUrl" controls playsinline preload="metadata"></video>
-      <div class="result-actions">
-        <a :href="resultUrl" target="_blank" rel="noopener">全屏打开</a>
-        <a :href="resultUrl" download>下载视频</a>
+
+      <div v-else class="result-card">
+        <div class="result-success-note">生成完成 · 视频已返回</div>
+        <video :src="resultUrl" controls playsinline preload="metadata"></video>
+        <div class="result-actions">
+          <a :href="resultUrl" target="_blank" rel="noopener">全屏打开</a>
+          <a :href="resultUrl" download>下载视频</a>
+        </div>
       </div>
     </section>
 
