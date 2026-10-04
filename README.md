@@ -1,23 +1,57 @@
 # Act-Two-Mobile
 
-手机端调用 Runway Act-Two 的轻量工具。
+一个以 Android 手机为优先入口的 Runway Act-Two 轻量控制器。
 
-## 当前阶段
-第一阶段仅验证并跑通：
-角色参考图 + 动作参考视频 → Runway Act-Two → 任务轮询 → 结果视频。
+## 已实现
+- 手机端上传角色参考图
+- 手机端上传动作参考视频
+- Act-Two 参数：表情强度、身体控制、输出比例、Seed
+- FastAPI 后端安全持有 Runway API Key
+- 素材先上传为 Runway ephemeral asset，再创建 Character Performance 任务
+- 前端轮询任务状态
+- 生成完成后在线播放与下载结果
 
-## 开发原则
-- Android 手机优先
-- 手机端只负责上传、参数、提交、状态、预览与下载
-- Runway API Key 仅保存在后端环境变量
-- 第一版不做账号、会员、支付、多模型、ComfyUI 控制、视频剪辑
-- 每完成一个阶段同步更新开发日志与工作交接
-
-## 当前技术方向
-- Frontend: Vue 3 + Vite（后续）
+## 技术栈
+- Frontend: Vue 3 + Vite
 - Backend: Python + FastAPI
-- Database: SQLite（后续）
-- Cloud generation: Runway API / Act-Two
+- Runway SDK: runwayml
+- Model: act_two
 
-## 当前任务
-先完成最小 Act-Two API 调用验证，再进入完整 App 开发。
+## 本地运行
+
+### 1. 后端
+```bash
+cd backend
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env
+```
+
+在 `.env` 中填写：
+```env
+RUNWAYML_API_SECRET=key_xxx
+```
+
+启动：
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+### 2. 前端
+```bash
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0
+```
+
+电脑与 Android 手机处于同一局域网时，可通过电脑局域网 IP 访问 Vite 页面。
+
+## 安全
+- API Key 只允许存在于后端 `.env`
+- `.env` 已加入 `.gitignore`
+- 前端不会接触 Runway API Key
+
+## 当前限制
+真实生成仍需要在运行环境中配置用户自己的 Runway API Key 与可用 API Credits。
