@@ -693,3 +693,15 @@ label {
 .reference-player {
   cursor: pointer;
 }
+
+
+.background-tip {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #262d3a;
+  border-radius: 12px;
+  background: #0d1118;
+  color: #8f98a6;
+  font-size: 11px;
+  line-height: 1.55;
+}
