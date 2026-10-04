@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 
 const savedBackend = localStorage.getItem('actTwoBackendUrl') || import.meta.env.VITE_API_BASE_URL || ''
 const backendUrl = ref(savedBackend)
@@ -57,15 +57,22 @@ function normalizeBackend(value) {
 
 function saveBackend() {
   const normalized = normalizeBackend(backendDraft.value)
+  const previousUrl = backendUrl.value
+
   backendUrl.value = normalized
   backendDraft.value = normalized
+
   if (normalized) {
     localStorage.setItem('actTwoBackendUrl', normalized)
-    backendState.value = '未检测'
+
+    if (normalized !== previousUrl || !backendState.value.startsWith('已连接')) {
+      backendState.value = '未检测'
+    }
   } else {
     localStorage.removeItem('actTwoBackendUrl')
     backendState.value = '未设置'
   }
+
   settingsOpen.value = false
 }
 
@@ -202,6 +209,12 @@ function randomSeed() {
   seed.value = String(Math.floor(Math.random() * 4294967295))
 }
 
+onMounted(() => {
+  if (savedBackend) {
+    testBackend()
+  }
+})
+
 onBeforeUnmount(() => {
   if (pollTimer) clearTimeout(pollTimer)
   if (characterPreview.value) URL.revokeObjectURL(characterPreview.value)
@@ -250,7 +263,7 @@ onBeforeUnmount(() => {
         </button>
         <button type="button" class="primary-small" @click="saveBackend">保存</button>
       </div>
-      <p class="backend-hint">电脑与手机同一 Wi-Fi 时，填写电脑局域网 IP，例如 http://192.168.1.8:8000。</p>
+      <p class="backend-hint">可填写局域网或公网后端地址。当前云服务器示例：http://8.211.148.39:8000。</p>
     </section>
 
     <section class="upload-grid">
